@@ -1,0 +1,83 @@
+[
+  {
+    "id": "point-1",
+    "name": "Green Valley Collection Center",
+    "location": "Chennai",
+    "address": "123 Farm Road, Green Valley, Chennai - 600042",
+    "contact": "+91 9876543210",
+    "email": "gvcc@example.com",
+    "hours": "7:00 AM - 7:00 PM",
+    "days": "Monday to Sunday",
+    "distance": "1.2",
+    "facilities": ["Parking", "Storage", "Weighing"],
+    "products": [
+      {
+        "name": "Organic Tomatoes",
+        "quantity": "500 kg",
+        "grade": "Grade A",
+        "price": "₹45/kg"
+      },
+      {
+        "name": "Basmati Rice",
+        "quantity": "2 tons",
+        "grade": "Premium",
+        "price": "₹120/kg"
+      }
+    ],
+    "coordinates": [13.0827, 80.2707]
+  },
+  {
+    "id": "point-2",
+    "name": "Golden Harvest Aggregation Point",
+    "location": "Bangalore",
+    "address": "456 Agri Lane, Whitefield, Bangalore - 560066",
+    "contact": "+91 8765432109",
+    "email": "ghap@example.com",
+    "hours": "6:00 AM - 8:00 PM",
+    "days": "Monday to Saturday",
+    "distance": "2.5",
+    "facilities": ["Parking", "Refrigeration", "Packaging"],
+    "products": [
+      {
+        "name": "Alphonso Mangoes",
+        "quantity": "300 kg",
+        "grade": "Grade A",
+        "price": "₹150/kg"
+      },
+      {
+        "name": "Organic Spinach",
+        "quantity": "200 kg",
+        "grade": "Grade A",
+        "price": "₹60/kg"
+      }
+    ],
+    "coordinates": [12.9716, 77.5946]
+  },
+  {
+    "id": "point-3",
+    "name": "Fresh Fields Collection Hub",
+    "location": "Hyderabad",
+    "address": "789 Orchard Street, Gachibowli, Hyderabad - 500032",
+    "contact": "+91 7654321098",
+    "email": "ffch@example.com",
+    "hours": "8:00 AM - 6:00 PM",
+    "days": "Monday to Friday",
+    "distance": "3.1",
+    "facilities": ["Storage", "Loading Dock", "Weighing"],
+    "products": [
+      {
+        "name": "Red Onions",
+        "quantity": "1 ton",
+        "grade": "Grade B",
+        "price": "₹35/kg"
+      },
+      {
+        "name": "Potatoes",
+        "quantity": "1.5 tons",
+        "grade": "Grade A",
+        "price": "₹25/kg"
+      }
+    ],
+    "coordinates": [17.3850, 78.4867]
+  }
+]

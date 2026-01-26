@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "ethers": "^6.15.0",
+    "leaflet": "^1.9.4",
+    "lucide-react": "^0.522.0"
+  }
+}

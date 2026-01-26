@@ -1,0 +1,18 @@
+services:
+  besu:
+    image: hyperledger/besu:23.10.3
+    command:
+      - --network=dev
+      - --miner-enabled
+      - --miner-coinbase=0xdAC02c77a66120C959a0F9520FDe799D0965603a
+      - --rpc-http-enabled
+      - --rpc-http-api=ETH,NET,WEB3,TRACE,TXPOOL
+      - --rpc-http-cors-origins=*
+      - --rpc-http-host=0.0.0.0
+      - --host-allowlist=*
+      - --logging=INFO
+    ports:
+      - "8545:8545" # RPC-HTTP
+      - "8546:8546" # RPC-WS
+      - "30303:30303" # P2P
+      - "30303:30303/udp" # P2P
