@@ -1,30 +1,29 @@
 #include "esp_camera.h"
 #include <WiFi.h>
+#include <HTTPClient.h>
+#include "mbedtls/md.h" // Built-in ESP32 library for hashing
 
 // ================================================================
-// CAMERA MODEL - Uncomment your specific board
+// CAMERA MODEL
 // ================================================================
-#define CAMERA_MODEL_AI_THINKER // Has PSRAM
-//#define CAMERA_MODEL_WROVER_KIT
-//#define CAMERA_MODEL_ESP_EYE
-//#define CAMERA_MODEL_M5STACK_PSRAM
-//#define CAMERA_MODEL_M5STACK_V2_PSRAM
-//#define CAMERA_MODEL_M5STACK_WIDE
-//#define CAMERA_MODEL_M5STACK_ESP32CAM
-//#define CAMERA_MODEL_AI_THINKER_NO_PSRAM
-
+#define CAMERA_MODEL_AI_THINKER
 #include "camera_pins.h"
 
 // ===========================
-// WiFi Credentials
+// WiFi & Server Credentials
 // ===========================
 const char *ssid = "beep beep boop beep";
 const char *password = "potatoslur";
 
-// Trigger Pin
+// NOTE: It is highly recommended to use a separate endpoint for binary image uploads!
+const char *serverImageURL = "http://10.204.146.11:3000/api/upload-image"; 
+
 const int triggerPin = 14;
 
 void startCameraServer();
+
+// Function prototype for hashing
+String calculateSHA256(uint8_t *payload, size_t length);
 
 void setup() {
   pinMode(triggerPin, INPUT);
@@ -53,13 +52,12 @@ void setup() {
   config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
   config.frame_size = FRAMESIZE_UXGA;
-  config.pixel_format = PIXFORMAT_JPEG; // for streaming
+  config.pixel_format = PIXFORMAT_JPEG; 
   config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
   config.fb_location = CAMERA_FB_IN_PSRAM;
   config.jpeg_quality = 12;
   config.fb_count = 1;
 
-  // PSRAM check for higher resolution
   if (psramFound()) {
     config.jpeg_quality = 10;
     config.fb_count = 2;
@@ -69,7 +67,6 @@ void setup() {
     config.fb_location = CAMERA_FB_IN_DRAM;
   }
 
-  // camera init
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
     Serial.printf("Camera init failed with error 0x%x", err);
@@ -77,10 +74,8 @@ void setup() {
   }
 
   sensor_t * s = esp_camera_sensor_get();
-  // Drop down frame size for higher initial frame rate
-  s->set_framesize(s, FRAMESIZE_QVGA);
+  s->set_framesize(s, FRAMESIZE_QVGA); // Kept lower resolution for stable WiFi transmission
 
-  // WiFi Connection
   WiFi.begin(ssid, password);
   WiFi.setSleep(false);
 
@@ -91,34 +86,88 @@ void setup() {
   }
   Serial.println("\nWiFi connected");
 
-  // Start the web server defined in the example tabs
   startCameraServer();
 
-  Serial.println("");
   Serial.println("------------------------------------");
-  Serial.print("Camera Ready! Use 'http://");
-  Serial.print(WiFi.localIP());
-  Serial.println("' to connect");
-  Serial.println("Pull Pin 14 HIGH to trigger a capture URL.");
+  Serial.println("Camera Ready!");
+  Serial.println("Pull Pin 14 HIGH to capture, hash, and upload.");
   Serial.println("------------------------------------");
 }
 
 void loop() {
-  // Check if Pin 14 is HIGH
   if (digitalRead(triggerPin) == HIGH) {
-    // We don't necessarily need to call esp_camera_fb_get() here 
-    // because the URL /capture handles the capture itself. 
-    // We just need to tell the user the URL is ready.
-    
-    Serial.println("\n[TRIGGER] Photo requested!");
-    Serial.print("View URL: http://");
-    Serial.print(WiFi.localIP());
-    Serial.println("/capture");
-    
-    // Simple debounce/cooldown delay
-    delay(2000); 
+    Serial.println("\n[TRIGGER] Capturing image...");
+
+    // 1. Capture the image
+    camera_fb_t * fb = esp_camera_fb_get();
+    if (!fb) {
+      Serial.println("Camera capture failed!");
+      delay(2000);
+      return;
+    }
+
+    // 2. Hash the image data
+    Serial.println("Calculating SHA-256 Hash...");
+    String imageHash = calculateSHA256(fb->buf, fb->len);
+    Serial.print("Hash: ");
+    Serial.println(imageHash);
+
+    // 3. Send to Server
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.println("Uploading to server...");
+      HTTPClient http;
+      http.begin(serverImageURL);
+      
+      // Tell the server we are sending a raw JPEG image
+      http.addHeader("Content-Type", "image/jpeg");
+      // Pass the hash securely in the HTTP Headers
+      http.addHeader("X-Image-Hash", imageHash); 
+
+      // Send the actual image buffer
+      int httpResponseCode = http.POST(fb->buf, fb->len);
+
+      if (httpResponseCode > 0) {
+        Serial.printf("Server Response Code: %d\n", httpResponseCode);
+        String response = http.getString();
+        Serial.println(response);
+      } else {
+        Serial.printf("Error sending POST: %s\n", http.errorToString(httpResponseCode).c_str());
+      }
+      http.end();
+    } else {
+      Serial.println("WiFi Disconnected. Cannot upload.");
+    }
+
+    // 4. Free the camera memory (CRITICAL step to prevent crashes)
+    esp_camera_fb_return(fb);
+
+    // Cooldown to prevent spamming the server
+    delay(5000); 
   }
   
-  // Minimal delay to keep the background tasks (WiFi/Web Server) running smoothly
   delay(10);
+}
+
+// ================================================================
+// SHA-256 Hashing Function
+// ================================================================
+String calculateSHA256(uint8_t *payload, size_t length) {
+  byte shaResult[32];
+  mbedtls_md_context_t ctx;
+  mbedtls_md_type_t md_type = MBEDTLS_MD_SHA256;
+  
+  mbedtls_md_init(&ctx);
+  mbedtls_md_setup(&ctx, mbedtls_md_info_from_type(md_type), 0);
+  mbedtls_md_starts(&ctx);
+  mbedtls_md_update(&ctx, payload, length);
+  mbedtls_md_finish(&ctx, shaResult);
+  mbedtls_md_free(&ctx);
+
+  String hashStr = "";
+  for(int i = 0; i < sizeof(shaResult); i++) {
+    char str[3];
+    sprintf(str, "%02x", (int)shaResult[i]);
+    hashStr += str;
+  }
+  return hashStr;
 }

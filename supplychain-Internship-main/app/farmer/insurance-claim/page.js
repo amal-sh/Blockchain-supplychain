@@ -5,7 +5,7 @@ import { useAuth } from '../../../context/AuthContext';
 
 export default function InsuranceClaim() {
   const { user, logout, loading: authLoading } = useAuth();
-  
+
   const [userFarms, setUserFarms] = useState([]);
   const [existingClaims, setExistingClaims] = useState([]);
   const [isLoadingFarms, setIsLoadingFarms] = useState(true);
@@ -15,6 +15,8 @@ export default function InsuranceClaim() {
 
   // IoT sensor data state
   const [sensorData, setSensorData] = useState([]);
+  const [farmImages, setFarmImages] = useState([]);
+  const [evidenceAlerts, setEvidenceAlerts] = useState([]);
   const [isLoadingSensorData, setIsLoadingSensorData] = useState(false);
   const [sensorValidation, setSensorValidation] = useState({ isValid: false, reason: "" });
 
@@ -59,8 +61,8 @@ export default function InsuranceClaim() {
           if (!res.ok) {
             throw new Error(`Failed to fetch sensor data: ${res.statusText}`);
           }
-          const json = await res.json();
-          
+          let json = await res.json();
+
           // Process data to ensure correct types
           const processedData = json.map(entry => ({
             ...entry,
@@ -78,11 +80,78 @@ export default function InsuranceClaim() {
         }
       };
 
+      const fetchImages = async () => {
+        try {
+          const res = await fetch('/api/farm-images');
+          if (res.ok) {
+            const data = await res.json();
+            // Format dates
+            const formatted = data.map(img => ({
+              ...img,
+              timestamp: new Date(img.timestamp)
+            }));
+            setFarmImages(formatted);
+          }
+        } catch (error) {
+          console.error("Error fetching images:", error);
+        }
+      };
+
       fetchSensorData();
-      const interval = setInterval(fetchSensorData, 30000); // Update every 30 seconds
+      fetchImages();
+
+      const interval = setInterval(() => {
+        fetchSensorData();
+        fetchImages();
+      }, 30000); // Update every 30 seconds
       return () => clearInterval(interval);
     }
   }, [user]);
+
+  // Correlate Images with Sensor Alerts
+  useEffect(() => {
+    if (sensorData.length === 0 || farmImages.length === 0) return;
+
+    // We consider it a matched event if the image and sensor reading are within 60 seconds
+    const TIME_WINDOW_MS = 60 * 1000;
+
+    const matchedEvidence = [];
+
+    // Reverse iterate to find the most recent images first
+    farmImages.forEach(img => {
+      // Find the closest sensor reading to this image capture
+      let closestReading = null;
+      let minDiff = Infinity;
+
+      sensorData.forEach(reading => {
+        const diff = Math.abs(img.timestamp.getTime() - reading.timestamp.getTime());
+        if (diff < minDiff && diff <= TIME_WINDOW_MS) {
+          minDiff = diff;
+          closestReading = reading;
+        }
+      });
+
+      if (closestReading) {
+        // Evaluate what threshold breached at this exact reading based on NamuddeSensor logic
+        const alerts = [];
+        if (closestReading.temperature > 20) alerts.push("High Temperature (>20°C)");
+        if (closestReading.soil < 30) alerts.push("Low Soil Moisture (<30%)");
+
+        if (alerts.length > 0) {
+          matchedEvidence.push({
+            imagePath: img.imagePath,
+            reading: closestReading,
+            alerts: alerts,
+            timestamp: closestReading.timestamp,
+            hashId: img.reportedHash
+          });
+        }
+      }
+    });
+
+    setEvidenceAlerts(matchedEvidence);
+
+  }, [sensorData, farmImages]);
 
   // Validate sensor conditions based on claim type
   const validateSensorConditions = (claimType) => {
@@ -111,79 +180,79 @@ export default function InsuranceClaim() {
     switch (claimType) {
       case 'Weather Damage (Drought, Flood, Hail)':
         // Check for drought conditions
-        if (avgTemp > sensorThresholds.temperature.droughtMin && 
-            avgHumidity < sensorThresholds.humidity.droughtMax &&
-            avgSoil < sensorThresholds.soil.droughtMax &&
-            totalRain < sensorThresholds.rain.drought) {
-          return { 
-            isValid: true, 
-            reason: `Drought conditions detected: Temp ${avgTemp.toFixed(1)}°C, Humidity ${avgHumidity.toFixed(1)}%, Soil ${avgSoil.toFixed(1)}%, Rain ${totalRain}mm` 
+        if (avgTemp > sensorThresholds.temperature.droughtMin &&
+          avgHumidity < sensorThresholds.humidity.droughtMax &&
+          avgSoil < sensorThresholds.soil.droughtMax &&
+          totalRain < sensorThresholds.rain.drought) {
+          return {
+            isValid: true,
+            reason: `Drought conditions detected: Temp ${avgTemp.toFixed(1)}°C, Humidity ${avgHumidity.toFixed(1)}%, Soil ${avgSoil.toFixed(1)}%, Rain ${totalRain}mm`
           };
         }
-        
+
         // Check for flood conditions
         if (avgHumidity > sensorThresholds.humidity.floodMin &&
-            avgSoil > sensorThresholds.soil.floodMin &&
-            totalRain > sensorThresholds.rain.flood) {
-          return { 
-            isValid: true, 
-            reason: `Flood conditions detected: Humidity ${avgHumidity.toFixed(1)}%, Soil ${avgSoil.toFixed(1)}%, Rain ${totalRain}mm` 
+          avgSoil > sensorThresholds.soil.floodMin &&
+          totalRain > sensorThresholds.rain.flood) {
+          return {
+            isValid: true,
+            reason: `Flood conditions detected: Humidity ${avgHumidity.toFixed(1)}%, Soil ${avgSoil.toFixed(1)}%, Rain ${totalRain}mm`
           };
         }
-        
+
         // Check for extreme temperature (hail/storm indicator)
-        if (latest.temperature < sensorThresholds.temperature.floodMax || 
-            latest.temperature > sensorThresholds.temperature.droughtMin) {
-          return { 
-            isValid: true, 
-            reason: `Extreme weather detected: Temperature ${latest.temperature}°C` 
+        if (latest.temperature < sensorThresholds.temperature.floodMax ||
+          latest.temperature > sensorThresholds.temperature.droughtMin) {
+          return {
+            isValid: true,
+            reason: `Extreme weather detected: Temperature ${latest.temperature}°C`
           };
         }
-        
-        return { 
-          isValid: false, 
-          reason: `Current conditions appear normal. Temp: ${avgTemp.toFixed(1)}°C, Humidity: ${avgHumidity.toFixed(1)}%, Soil: ${avgSoil.toFixed(1)}%, Rain: ${totalRain}mm` 
+
+        return {
+          isValid: false,
+          reason: `Current conditions appear normal. Temp: ${avgTemp.toFixed(1)}°C, Humidity: ${avgHumidity.toFixed(1)}%, Soil: ${avgSoil.toFixed(1)}%, Rain: ${totalRain}mm`
         };
 
       case 'Fire Damage':
-        if (avgTemp > sensorThresholds.temperature.droughtMin && 
-            avgHumidity < sensorThresholds.humidity.droughtMax) {
-          return { 
-            isValid: true, 
-            reason: `Fire risk conditions: High temp ${avgTemp.toFixed(1)}°C, Low humidity ${avgHumidity.toFixed(1)}%` 
+        if (avgTemp > sensorThresholds.temperature.droughtMin &&
+          avgHumidity < sensorThresholds.humidity.droughtMax) {
+          return {
+            isValid: true,
+            reason: `Fire risk conditions: High temp ${avgTemp.toFixed(1)}°C, Low humidity ${avgHumidity.toFixed(1)}%`
           };
         }
-        return { 
-          isValid: false, 
-          reason: `No fire risk conditions detected. Current temp: ${avgTemp.toFixed(1)}°C, humidity: ${avgHumidity.toFixed(1)}%` 
+        return {
+          isValid: false,
+          reason: `No fire risk conditions detected. Current temp: ${avgTemp.toFixed(1)}°C, humidity: ${avgHumidity.toFixed(1)}%`
         };
 
       case 'Disease Outbreak':
       case 'Pest Infestation':
         // High humidity can lead to fungal diseases and pest issues
         if (avgHumidity > sensorThresholds.humidity.max && avgSoil > sensorThresholds.soil.max) {
-          return { 
-            isValid: true, 
-            reason: `High moisture conditions favorable for pests/disease: Humidity ${avgHumidity.toFixed(1)}%, Soil ${avgSoil.toFixed(1)}%` 
+          return {
+            isValid: true,
+            reason: `High moisture conditions favorable for pests/disease: Humidity ${avgHumidity.toFixed(1)}%, Soil ${avgSoil.toFixed(1)}%`
           };
         }
-        return { 
-          isValid: false, 
-          reason: `Current moisture levels appear normal. Humidity: ${avgHumidity.toFixed(1)}%, Soil: ${avgSoil.toFixed(1)}%` 
+        return {
+          isValid: false,
+          reason: `Current moisture levels appear normal. Humidity: ${avgHumidity.toFixed(1)}%, Soil: ${avgSoil.toFixed(1)}%`
         };
 
       case 'Equipment Failure':
       case 'Other':
         // Allow these claims regardless of sensor data
-        return { 
-          isValid: true, 
-          reason: "Claim type not dependent on environmental conditions" 
+        return {
+          isValid: true,
+          reason: "Claim type not dependent on environmental conditions"
         };
 
       default:
-        return { 
-          isValid: false, 
-          reason: "Unknown claim type" 
+        return {
+          isValid: false,
+          reason: "Unknown claim type"
         };
     }
   };
@@ -255,7 +324,7 @@ export default function InsuranceClaim() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     // Validate sensor conditions before submission
     const validation = validateSensorConditions(formData.claimType);
     setSensorValidation(validation);
@@ -290,7 +359,7 @@ export default function InsuranceClaim() {
           text: `Insurance claim submitted successfully! Claim Number: ${data.claimNumber}. Sensor validation: ${validation.reason}`,
           isError: false
         });
-        
+
         // Reset form
         setFormData({
           farmId: '',
@@ -310,7 +379,7 @@ export default function InsuranceClaim() {
         setTimeout(() => {
           window.location.reload();
         }, 3000);
-        
+
       } else {
         setSubmitMessage({
           text: data.message || 'Failed to submit claim',
@@ -431,23 +500,90 @@ export default function InsuranceClaim() {
             )}
           </div>
 
+          {/* Verified Alerts & Evidence Dashboard */}
+          {evidenceAlerts.length > 0 && (
+            <div style={{ backgroundColor: 'white', padding: '1.5rem', borderRadius: '0.75rem', boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)', marginBottom: '2rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
+                <span style={{ fontSize: '1.5rem' }}>📸</span>
+                <h2 style={{ fontSize: '1.25rem', fontWeight: '600', color: '#111827', margin: 0 }}>Verified Field Evidence</h2>
+                <span style={{ fontSize: '0.75rem', backgroundColor: '#fee2e2', color: '#dc2626', padding: '0.25rem 0.5rem', borderRadius: '9999px', fontWeight: 'bold' }}>
+                  {evidenceAlerts.length} Active Alerts
+                </span>
+              </div>
+              <p style={{ color: '#6b7280', fontSize: '0.875rem', marginBottom: '1.5rem' }}>
+                The following images were automatically captured by the IoT camera when abnormal field conditions were detected by the sensors.
+              </p>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1.5rem' }}>
+                {evidenceAlerts.map((evidence, idx) => (
+                  <div key={idx} style={{ border: '1px solid #e5e7eb', borderRadius: '0.5rem', overflow: 'hidden' }}>
+                    <div style={{ position: 'relative', width: '100%', height: '200px', backgroundColor: '#f3f4f6' }}>
+                      {/* Using standard img tag since Next/Image requires remote pattern configuration */}
+                      <img
+                        src={evidence.imagePath}
+                        alt="Farm Camera Evidence"
+                        style={{ objectFit: 'cover', width: '100%', height: '100%' }}
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="%239ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>';
+                        }}
+                      />
+                      <div style={{ position: 'absolute', top: '0.5rem', right: '0.5rem', backgroundColor: 'rgba(0,0,0,0.6)', color: 'white', fontSize: '0.75rem', padding: '0.25rem 0.5rem', borderRadius: '0.25rem' }}>
+                        {formatDate(evidence.timestamp)} {evidence.timestamp.toLocaleTimeString()}
+                      </div>
+                    </div>
+
+                    <div style={{ padding: '1rem' }}>
+                      <h4 style={{ fontSize: '0.875rem', fontWeight: 'bold', color: '#dc2626', marginBottom: '0.5rem' }}>
+                        Alerts: {evidence.alerts.join(', ')}
+                      </h4>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem', fontSize: '0.75rem', textAlign: 'center' }}>
+                        <div style={{ backgroundColor: '#fef2f2', padding: '0.5rem', borderRadius: '0.25rem' }}>
+                          <span style={{ display: 'block', color: '#6b7280', marginBottom: '0.25rem' }}>Temp</span>
+                          <span style={{ fontWeight: 'bold', color: evidence.reading.temperature > 20 ? '#dc2626' : '#374151' }}>
+                            {evidence.reading.temperature}°C
+                          </span>
+                        </div>
+                        <div style={{ backgroundColor: '#eff6ff', padding: '0.5rem', borderRadius: '0.25rem' }}>
+                          <span style={{ display: 'block', color: '#6b7280', marginBottom: '0.25rem' }}>Humidity</span>
+                          <span style={{ fontWeight: 'bold', color: '#2563eb' }}>
+                            {evidence.reading.humidity}%
+                          </span>
+                        </div>
+                        <div style={{ backgroundColor: '#fefce8', padding: '0.5rem', borderRadius: '0.25rem' }}>
+                          <span style={{ display: 'block', color: '#6b7280', marginBottom: '0.25rem' }}>Soil</span>
+                          <span style={{ fontWeight: 'bold', color: evidence.reading.soil < 30 ? '#d97706' : '#854d0e' }}>
+                            {evidence.reading.soil}%
+                          </span>
+                        </div>
+                      </div>
+                      <div style={{ marginTop: '0.75rem', fontSize: '0.65rem', color: '#9ca3af', wordBreak: 'break-all' }}>
+                        Hash (chain of custody): {evidence.hashId?.substring(0, 16)}...
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Page Header */}
           <div style={{ backgroundColor: 'white', padding: '1.5rem', borderRadius: '0.75rem', boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)', marginBottom: '2rem' }}>
             <div style={{ marginBottom: '1rem' }}>
               <h1 style={{ fontSize: '2rem', fontWeight: 'bold', color: '#111827', margin: '0 0 0.5rem 0' }}>IoT-Validated Insurance Claims</h1>
               <p style={{ color: '#6b7280', margin: 0 }}>Submit insurance claims based on real-time sensor data validation</p>
             </div>
-            
+
             <div>
               <button
                 onClick={() => setShowForm(!showForm)}
-                style={{ 
-                  backgroundColor: '#2563eb', 
-                  color: 'white', 
-                  padding: '0.75rem 1.5rem', 
-                  borderRadius: '0.5rem', 
-                  border: 'none', 
-                  fontWeight: '600', 
+                style={{
+                  backgroundColor: '#2563eb',
+                  color: 'white',
+                  padding: '0.75rem 1.5rem',
+                  borderRadius: '0.5rem',
+                  border: 'none',
+                  fontWeight: '600',
                   cursor: 'pointer',
                   fontSize: '0.875rem'
                 }}
@@ -461,13 +597,13 @@ export default function InsuranceClaim() {
           {showForm && (
             <div style={{ backgroundColor: 'white', padding: '1.5rem', borderRadius: '0.75rem', boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)', marginBottom: '2rem' }}>
               <h2 style={{ fontSize: '1.5rem', fontWeight: '600', marginBottom: '1.5rem' }}>Submit New Insurance Claim</h2>
-              
+
               {/* Sensor Validation Status */}
               {formData.claimType && (
-                <div style={{ 
-                  marginBottom: '1.5rem', 
-                  padding: '0.75rem', 
-                  borderRadius: '0.375rem', 
+                <div style={{
+                  marginBottom: '1.5rem',
+                  padding: '0.75rem',
+                  borderRadius: '0.375rem',
                   fontSize: '0.875rem',
                   backgroundColor: sensorValidation.isValid ? '#f0fdf4' : '#fef2f2',
                   color: sensorValidation.isValid ? '#166534' : '#991b1b',
@@ -476,12 +612,12 @@ export default function InsuranceClaim() {
                   <strong>{sensorValidation.isValid ? '✓ Claim Eligible:' : '✗ Claim Not Eligible:'}</strong> {sensorValidation.reason}
                 </div>
               )}
-              
+
               {submitMessage.text && (
-                <div style={{ 
-                  marginBottom: '1rem', 
-                  padding: '0.75rem', 
-                  borderRadius: '0.375rem', 
+                <div style={{
+                  marginBottom: '1rem',
+                  padding: '0.75rem',
+                  borderRadius: '0.375rem',
                   fontSize: '0.875rem',
                   backgroundColor: submitMessage.isError ? '#fef2f2' : '#f0fdf4',
                   color: submitMessage.isError ? '#991b1b' : '#166534'
@@ -503,10 +639,10 @@ export default function InsuranceClaim() {
                       onChange={handleInputChange}
                       required
                       disabled={isLoadingFarms}
-                      style={{ 
-                        width: '100%', 
-                        padding: '0.5rem', 
-                        border: '1px solid #d1d5db', 
+                      style={{
+                        width: '100%',
+                        padding: '0.5rem',
+                        border: '1px solid #d1d5db',
                         borderRadius: '0.375rem',
                         fontSize: '0.875rem'
                       }}
@@ -530,10 +666,10 @@ export default function InsuranceClaim() {
                       value={formData.claimType}
                       onChange={handleInputChange}
                       required
-                      style={{ 
-                        width: '100%', 
-                        padding: '0.5rem', 
-                        border: '1px solid #d1d5db', 
+                      style={{
+                        width: '100%',
+                        padding: '0.5rem',
+                        border: '1px solid #d1d5db',
                         borderRadius: '0.375rem',
                         fontSize: '0.875rem'
                       }}
@@ -557,10 +693,10 @@ export default function InsuranceClaim() {
                       onChange={handleInputChange}
                       placeholder="e.g., Rice, Wheat, Mango"
                       required
-                      style={{ 
-                        width: '100%', 
-                        padding: '0.5rem', 
-                        border: '1px solid #d1d5db', 
+                      style={{
+                        width: '100%',
+                        padding: '0.5rem',
+                        border: '1px solid #d1d5db',
                         borderRadius: '0.375rem',
                         fontSize: '0.875rem'
                       }}
@@ -580,10 +716,10 @@ export default function InsuranceClaim() {
                       step="0.01"
                       min="0"
                       required
-                      style={{ 
-                        width: '100%', 
-                        padding: '0.5rem', 
-                        border: '1px solid #d1d5db', 
+                      style={{
+                        width: '100%',
+                        padding: '0.5rem',
+                        border: '1px solid #d1d5db',
                         borderRadius: '0.375rem',
                         fontSize: '0.875rem'
                       }}
@@ -603,10 +739,10 @@ export default function InsuranceClaim() {
                       step="0.01"
                       min="0"
                       required
-                      style={{ 
-                        width: '100%', 
-                        padding: '0.5rem', 
-                        border: '1px solid #d1d5db', 
+                      style={{
+                        width: '100%',
+                        padding: '0.5rem',
+                        border: '1px solid #d1d5db',
                         borderRadius: '0.375rem',
                         fontSize: '0.875rem'
                       }}
@@ -623,10 +759,10 @@ export default function InsuranceClaim() {
                       value={formData.damageDate}
                       onChange={handleInputChange}
                       required
-                      style={{ 
-                        width: '100%', 
-                        padding: '0.5rem', 
-                        border: '1px solid #d1d5db', 
+                      style={{
+                        width: '100%',
+                        padding: '0.5rem',
+                        border: '1px solid #d1d5db',
                         borderRadius: '0.375rem',
                         fontSize: '0.875rem'
                       }}
@@ -643,10 +779,10 @@ export default function InsuranceClaim() {
                       value={formData.contactPhone}
                       onChange={handleInputChange}
                       placeholder="+91 9876543210"
-                      style={{ 
-                        width: '100%', 
-                        padding: '0.5rem', 
-                        border: '1px solid #d1d5db', 
+                      style={{
+                        width: '100%',
+                        padding: '0.5rem',
+                        border: '1px solid #d1d5db',
                         borderRadius: '0.375rem',
                         fontSize: '0.875rem'
                       }}
@@ -665,10 +801,10 @@ export default function InsuranceClaim() {
                     rows={4}
                     placeholder="Please describe the nature and extent of the damage..."
                     required
-                    style={{ 
-                      width: '100%', 
-                      padding: '0.5rem', 
-                      border: '1px solid #d1d5db', 
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem',
+                      border: '1px solid #d1d5db',
                       borderRadius: '0.375rem',
                       fontSize: '0.875rem',
                       resize: 'vertical'
@@ -686,10 +822,10 @@ export default function InsuranceClaim() {
                     onChange={handleInputChange}
                     rows={3}
                     placeholder="Any additional details that might help with your claim..."
-                    style={{ 
-                      width: '100%', 
-                      padding: '0.5rem', 
-                      border: '1px solid #d1d5db', 
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem',
+                      border: '1px solid #d1d5db',
                       borderRadius: '0.375rem',
                       fontSize: '0.875rem',
                       resize: 'vertical'
@@ -701,20 +837,20 @@ export default function InsuranceClaim() {
                   <button
                     type="submit"
                     disabled={isSubmitting || isLoadingFarms || !sensorValidation.isValid}
-                    style={{ 
+                    style={{
                       backgroundColor: (isSubmitting || !sensorValidation.isValid) ? '#93c5fd' : '#2563eb',
-                      color: 'white', 
-                      padding: '0.75rem 2rem', 
-                      borderRadius: '0.5rem', 
-                      border: 'none', 
-                      fontWeight: '600', 
+                      color: 'white',
+                      padding: '0.75rem 2rem',
+                      borderRadius: '0.5rem',
+                      border: 'none',
+                      fontWeight: '600',
                       cursor: (isSubmitting || !sensorValidation.isValid) ? 'not-allowed' : 'pointer',
                       fontSize: '0.875rem'
                     }}
                   >
-                    {isSubmitting ? 'Submitting...' : 
-                     !sensorValidation.isValid && formData.claimType ? 'Claim Not Eligible' : 
-                     'Submit Claim'}
+                    {isSubmitting ? 'Submitting...' :
+                      !sensorValidation.isValid && formData.claimType ? 'Claim Not Eligible' :
+                        'Submit Claim'}
                   </button>
                 </div>
               </form>
@@ -724,7 +860,7 @@ export default function InsuranceClaim() {
           {/* Existing Claims */}
           <div style={{ backgroundColor: 'white', padding: '1.5rem', borderRadius: '0.75rem', boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)' }}>
             <h2 style={{ fontSize: '1.5rem', fontWeight: '600', marginBottom: '1.5rem' }}>Your Insurance Claims</h2>
-            
+
             {existingClaims.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '2rem' }}>
                 <p style={{ color: '#6b7280' }}>No insurance claims found.</p>
@@ -748,22 +884,22 @@ export default function InsuranceClaim() {
                           </p>
                         )}
                       </div>
-                      <div style={{ 
-                        padding: '0.25rem 0.75rem', 
-                        borderRadius: '9999px', 
-                        fontSize: '0.75rem', 
+                      <div style={{
+                        padding: '0.25rem 0.75rem',
+                        borderRadius: '9999px',
+                        fontSize: '0.75rem',
                         fontWeight: '500',
-                        backgroundColor: claim.status === 'approved' ? '#dcfce7' : 
-                                       claim.status === 'rejected' ? '#fee2e2' : 
-                                       claim.status === 'under_review' ? '#dbeafe' : '#fef3c7',
-                        color: claim.status === 'approved' ? '#166534' : 
-                               claim.status === 'rejected' ? '#991b1b' : 
-                               claim.status === 'under_review' ? '#1e40af' : '#92400e'
+                        backgroundColor: claim.status === 'approved' ? '#dcfce7' :
+                          claim.status === 'rejected' ? '#fee2e2' :
+                            claim.status === 'under_review' ? '#dbeafe' : '#fef3c7',
+                        color: claim.status === 'approved' ? '#166534' :
+                          claim.status === 'rejected' ? '#991b1b' :
+                            claim.status === 'under_review' ? '#1e40af' : '#92400e'
                       }}>
                         {claim.status.replace('_', ' ').toUpperCase()}
                       </div>
                     </div>
-                    
+
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', fontSize: '0.875rem', marginBottom: '0.75rem' }}>
                       <div>
                         <span style={{ fontWeight: '500', color: '#374151' }}>Claim Type:</span>
@@ -782,7 +918,7 @@ export default function InsuranceClaim() {
                         <p style={{ color: '#6b7280', margin: '0.25rem 0 0 0' }}>{formatCurrency(claim.estimatedLoss)}</p>
                       </div>
                     </div>
-                    
+
                     <div style={{ paddingTop: '0.75rem', borderTop: '1px solid #e5e7eb', fontSize: '0.875rem' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', color: '#9ca3af' }}>
                         <span>Damage Date: {formatDate(claim.damageDate)}</span>

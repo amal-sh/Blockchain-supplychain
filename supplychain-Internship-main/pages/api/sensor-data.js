@@ -94,26 +94,26 @@ async function writeToBlockchain(farmWalletAddress, sensorType, sensorValue) {
     // Ensure these ENV variables are set in your .env.local file
     const provider = new ethers.JsonRpcProvider(process.env.BLOCKCHAIN_RPC_URL || "http://localhost:8545");
     const signer = new ethers.Wallet(process.env.SENSOR_SERVICE_PRIVATE_KEY, provider);
-    
+
     // Create contract instance
     const contract = new ethers.Contract(contractAddress, supplyChainAbi, signer);
-    
+
     // Call fileInsuranceClaimFor function (service account files on behalf of farm)
     console.log(`Filing insurance claim on blockchain for farm ${farmWalletAddress}`);
     console.log(`Sensor: ${sensorType}, Value: ${sensorValue}`);
-    
+
     const tx = await contract.fileInsuranceClaimFor(
       farmWalletAddress,
       sensorType,
       sensorValue
     );
-    
+
     // Wait for transaction to be mined
     const receipt = await tx.wait();
-    
+
     console.log(`✅ Blockchain transaction successful! Hash: ${receipt.hash}`);
     return { success: true, txHash: receipt.hash };
-    
+
   } catch (error) {
     console.error('❌ Blockchain write failed:', error.message);
     return { success: false, error: error.message };
@@ -160,20 +160,20 @@ export default async function handler(req, res) {
 
       // 2. Check Thresholds
       const alerts = checkThresholds(temperature, humidity, soil, rain);
-      
+
       const blockchainResults = [];
-      
+
       // 3. Handle Alerts & Blockchain Interaction
       if (alerts.length > 0) {
         console.log(`⚠️ ${alerts.length} threshold breach(es) detected!`);
-        
+
         // Get farm wallet address from database
         const farm = await db.collection('farms').findOne({ _id: new ObjectId(farmId) });
-        
+
         if (!farm || !farm.walletAddress) {
           console.error('❌ Farm wallet address not found in database');
-          return res.status(200).json({ 
-            message: 'Data received successfully', 
+          return res.status(200).json({
+            message: 'Data received successfully',
             id: result.insertedId,
             alerts: alerts,
             blockchainWarning: 'Farm wallet address not found - could not write to blockchain'
@@ -186,15 +186,15 @@ export default async function handler(req, res) {
           // Use provider here for read-only check
           const contract = new ethers.Contract(contractAddress, supplyChainAbi, provider);
           const farmRole = await contract.roles(farm.walletAddress);
-          
+
           if (farmRole !== 2n) { // 2n is Role.FARM in Solidity
-             console.error(`❌ Farm ${farm.walletAddress} is not registered on-chain`);
-             return res.status(200).json({ 
-               message: 'Data received successfully', 
-               id: result.insertedId,
-               alerts: alerts,
-               blockchainWarning: 'Farm is not registered on-chain - could not write to blockchain'
-             });
+            console.error(`❌ Farm ${farm.walletAddress} is not registered on-chain`);
+            return res.status(200).json({
+              message: 'Data received successfully',
+              id: result.insertedId,
+              alerts: alerts,
+              blockchainWarning: 'Farm is not registered on-chain - could not write to blockchain'
+            });
           }
         } catch (roleCheckError) {
           console.error('❌ Failed to verify farm registration:', roleCheckError.message);
@@ -216,8 +216,8 @@ export default async function handler(req, res) {
       }
 
       // Return success with details about alerts/blockchain
-      return res.status(200).json({ 
-        message: 'Data received successfully', 
+      return res.status(200).json({
+        message: 'Data received successfully',
         id: result.insertedId,
         alerts: alerts.length > 0 ? alerts : undefined,
         blockchainRecords: blockchainResults.length > 0 ? blockchainResults : undefined
@@ -228,7 +228,7 @@ export default async function handler(req, res) {
       return res.status(500).json({ message: 'Internal Server Error', error: error.message });
     }
   }
-  
+
   // --- GET METHOD: FETCH DATA ---
   if (req.method === 'GET') {
     const { farmId } = req.query;
@@ -238,18 +238,27 @@ export default async function handler(req, res) {
     }
 
     try {
-      const data = await db
+      let data = await db
         .collection('sensorData')
         .find({ farmId: new ObjectId(farmId) })
         .sort({ timestamp: -1 })
         .limit(100)
         .toArray();
 
+      if (data.length === 0) {
+        data = await db
+          .collection('sensorData')
+          .find({ farmId: farmId })
+          .sort({ timestamp: -1 })
+          .limit(100)
+          .toArray();
+      }
+
       const formattedData = data.map(entry => ({
         ...entry,
         timestamp: entry.timestamp.toISOString(),
       })).reverse();
-      
+
       return res.status(200).json(formattedData);
     } catch (error) {
       console.error('Failed to fetch sensor data:', error);
