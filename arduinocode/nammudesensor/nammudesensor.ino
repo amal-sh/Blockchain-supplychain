@@ -13,7 +13,7 @@
 const char* ssid = "YOUR_WIFI_SSID";          // Add your WiFi Name
 const char* password = "YOUR_WIFI_PASSWORD";  // Add your WiFi Password
 const char* serverURL = "http://10.204.146.11:3000/api/sensor-data";
-const char* farmId = "68f1f0ad8b1f5c98334fb5a5";
+const char* farmId = "68b72a6325dd051caf5d15b4";
 
 const int dryValue = 3000;
 const int wetValue = 1500;
