@@ -1,11 +1,19 @@
+#include <WiFi.h>
+#include <HTTPClient.h>
 #include <Adafruit_Sensor.h>
 #include <DHT.h>
 #include <DHT_U.h>
 
+// --- Configuration ---
 #define MOISTURE_PIN 34
 #define DHTPIN 14 
 #define LED_PIN 13
 #define DHTTYPE DHT11
+
+const char* ssid = "YOUR_WIFI_SSID";          // Add your WiFi Name
+const char* password = "YOUR_WIFI_PASSWORD";  // Add your WiFi Password
+const char* serverURL = "http://10.204.146.11:3000/api/sensor-data";
+const char* farmId = "68f1f0ad8b1f5c98334fb5a5";
 
 const int dryValue = 3000;
 const int wetValue = 1500;
@@ -18,67 +26,85 @@ void setup() {
   pinMode(MOISTURE_PIN, INPUT);
   Serial.begin(9600);
   
+  // Connect to WiFi
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nWiFi Connected");
+
   dht.begin();
-  
   sensor_t sensor;
   dht.temperature().getSensor(&sensor);
   dht.humidity().getSensor(&sensor);
-  
-  // Ensure delay is at least 2 seconds for DHT11 stability
   delayMS = max((uint32_t)2000, (uint32_t)(sensor.min_delay / 1000));
 }
 
 void loop() {
   delay(delayMS);
+  
+  float currentTemp = 0;
+  float currentHum = 0;
+  bool thresholdTriggered = false;
 
   // --- Temperature Logic ---
   sensors_event_t event;
   dht.temperature().getEvent(&event);
-  
-  bool thresholdTriggered = false;
+  if (!isnan(event.temperature)) {
+    currentTemp = event.temperature;
+    Serial.print(F("Temp: ")); Serial.print(currentTemp); Serial.println(F("°C"));
+    if (currentTemp > 20.00) thresholdTriggered = true;
+  }
 
-  if (isnan(event.temperature)) {
-    Serial.println(F("Error reading temperature!"));
-  } else {
-    Serial.print(F("Temperature: "));
-    Serial.print(event.temperature);
-    Serial.println(F("°C"));
-    
-    if (event.temperature > 20.00) {
-      thresholdTriggered = true;
-      Serial.println(F("-> Alert: Temperature threshold crossed!"));
-    }
+  // --- Humidity Logic ---
+  dht.humidity().getEvent(&event);
+  if (!isnan(event.relative_humidity)) {
+    currentHum = event.relative_humidity;
+    Serial.print(F("Hum: ")); Serial.print(currentHum); Serial.println(F("%"));
   }
 
   // --- Soil Moisture Logic ---
   int rawSoil = analogRead(MOISTURE_PIN);
   int soilPercent = map(rawSoil, dryValue, wetValue, 0, 100);
   soilPercent = constrain(soilPercent, 0, 100);
-
-  Serial.print(F("Moisture: "));
-  Serial.print(soilPercent);
-  Serial.println(F("%"));
-
-  if (soilPercent < 30) { // Changed from 400 to 30%
-    thresholdTriggered = true;
-    Serial.println(F("-> Alert: Soil is dry!"));
-  }
+  Serial.print(F("Moisture: ")); Serial.print(soilPercent); Serial.println(F("%"));
+  
+  if (soilPercent < 30) thresholdTriggered = true;
 
   // --- Output Control ---
-  if (thresholdTriggered) {
-    digitalWrite(LED_PIN, HIGH);
-  } else {
-    digitalWrite(LED_PIN, LOW);
+  digitalWrite(LED_PIN, thresholdTriggered ? HIGH : LOW);
+
+  // --- Send Data ---
+  // Rain is set to 0.0 as a placeholder since no sensor is defined yet
+  sendToServer(currentTemp, currentHum, soilPercent, 0.0);
+  
+  Serial.println(F("-----------------------"));
+}
+
+void sendToServer(float temp, float hum, int soil, float rain) {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi disconnected.");
+    return;
   }
 
-  // --- Humidity Logic ---
-  dht.humidity().getEvent(&event);
-  if (isnan(event.relative_humidity)) {
-    Serial.println(F("Error reading humidity!"));
+  HTTPClient http;
+  http.begin(serverURL);
+  http.addHeader("Content-Type", "application/json");
+
+  String json = "{";
+  json += "\"temperature\":" + String(temp, 1) + ",";
+  json += "\"humidity\":" + String(hum, 1) + ",";
+  json += "\"soil\":" + String(soil) + ",";
+  json += "\"rain\":" + String(rain, 2) + ",";
+  json += "\"farmId\":\"" + String(farmId) + "\"";
+  json += "}";
+
+  int httpCode = http.POST(json);
+  if (httpCode > 0) {
+    Serial.printf("Server Response: %d\n", httpCode);
   } else {
-    Serial.print(F("Humidity: "));
-    Serial.print(event.relative_humidity);
-    Serial.println(F("%"));
+    Serial.printf("Error: %s\n", http.errorToString(httpCode).c_str());
   }
-  Serial.println(F("-----------------------"));
+  http.end();
 }
