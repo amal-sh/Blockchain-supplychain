@@ -10,9 +10,9 @@
 #define LED_PIN 13
 #define DHTTYPE DHT11
 
-const char* ssid = "YOUR_WIFI_SSID";          // Add your WiFi Name
-const char* password = "YOUR_WIFI_PASSWORD";  // Add your WiFi Password
-const char* serverURL = "http://10.204.146.11:3000/api/sensor-data";
+const char* ssid = "beep beep boop beep";          // Add your WiFi Name
+const char* password = "potatoslur";  // Add your WiFi Password
+const char* serverURL = "http://10.104.18.11:3000/api/sensor-data";
 const char* farmId = "68b72a6325dd051caf5d15b4";
 
 const int dryValue = 3000;
