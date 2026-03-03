@@ -25,6 +25,7 @@ contract SupplyChain is
         address claimant; // The farmer's farm address
         string sensorType;
         string sensorValue;
+        string imageHash;
         uint256 timestamp;
         string status; // e.g., "Filed", "Reviewed", "Paid"
     }
@@ -34,6 +35,7 @@ contract SupplyChain is
         address indexed claimant,
         string sensorType,
         string sensorValue,
+        string imageHash,
         uint256 timestamp
     );
 
@@ -246,7 +248,8 @@ contract SupplyChain is
     // Original function - farm files their own claim
     function fileInsuranceClaim(
         string memory _sensorType,
-        string memory _sensorValue
+        string memory _sensorValue,
+        string memory _imageHash
     ) public override onlyRole(Role.FARM) {
         uint256 id = claimCounter++;
         
@@ -255,20 +258,22 @@ contract SupplyChain is
             msg.sender,
             _sensorType,
             _sensorValue,
+            _imageHash,
             block.timestamp,
             "Filed"
         );
 
         claimsByFarmer[msg.sender].push(id);
 
-        emit InsuranceClaimFiled(id, msg.sender, _sensorType, _sensorValue, block.timestamp);
+        emit InsuranceClaimFiled(id, msg.sender, _sensorType, _sensorValue, _imageHash, block.timestamp);
     }
 
     // --- NEW: Service account files claim on behalf of a farm ---
     function fileInsuranceClaimFor(
         address _farmAddress,
         string memory _sensorType,
-        string memory _sensorValue
+        string memory _sensorValue,
+        string memory _imageHash
     ) public onlySensorService {
         require(roles[_farmAddress] == Role.FARM, "Target address is not a registered farm");
         
@@ -279,13 +284,14 @@ contract SupplyChain is
             _farmAddress,
             _sensorType,
             _sensorValue,
+            _imageHash,
             block.timestamp,
             "Filed"
         );
 
         claimsByFarmer[_farmAddress].push(id);
 
-        emit InsuranceClaimFiled(id, _farmAddress, _sensorType, _sensorValue, block.timestamp);
+        emit InsuranceClaimFiled(id, _farmAddress, _sensorType, _sensorValue, _imageHash, block.timestamp);
     }
 
     function getClaimsByFarmer(address _farmerAddress) external view returns (InsuranceClaim[] memory) {

@@ -88,7 +88,7 @@ function checkThresholds(temperature, humidity, soil, rain) {
 }
 
 // Helper: Write threshold breach to blockchain using service account
-async function writeToBlockchain(farmWalletAddress, sensorType, sensorValue) {
+async function writeToBlockchain(farmWalletAddress, sensorType, sensorValue, imageHash) {
   try {
     // Setup provider and signer using SERVICE ACCOUNT private key
     // Ensure these ENV variables are set in your .env.local file
@@ -100,12 +100,13 @@ async function writeToBlockchain(farmWalletAddress, sensorType, sensorValue) {
 
     // Call fileInsuranceClaimFor function (service account files on behalf of farm)
     console.log(`Filing insurance claim on blockchain for farm ${farmWalletAddress}`);
-    console.log(`Sensor: ${sensorType}, Value: ${sensorValue}`);
+    console.log(`Sensor: ${sensorType}, Value: ${sensorValue}, Image Hash: ${imageHash}`);
 
     const tx = await contract.fileInsuranceClaimFor(
       farmWalletAddress,
       sensorType,
-      sensorValue
+      sensorValue,
+      imageHash
     );
 
     // Wait for transaction to be mined
@@ -168,7 +169,7 @@ export default async function handler(req, res) {
         console.log(`⚠️ ${alerts.length} threshold breach(es) detected!`);
 
         // Get farm wallet address from database
-        const farm = await db.collection('farms').findOne({ _id: new ObjectId(farmId) });
+        let farm = await db.collection('farms').findOne({ _id: new ObjectId(farmId) });
 
         if (!farm || !farm.walletAddress) {
           console.error('❌ Farm wallet address not found in database');
@@ -201,12 +202,28 @@ export default async function handler(req, res) {
           // We continue despite this error to attempt the write, or you could return here.
         }
 
+        // 4. Find the most recent image uploaded within the last 60 seconds
+        const sixtySecondsAgo = new Date(Date.now() - 60 * 1000);
+        const recentImage = await db.collection('image_hashes').findOne(
+          { timestamp: { $gte: sixtySecondsAgo } },
+          { sort: { timestamp: -1 } }
+        );
+
+        const imageHashToUse = recentImage ? (recentImage.reportedHash || recentImage.calculatedHash) : "No Image";
+
+        if (recentImage) {
+          console.log(`📸 Found recent image hash attached to alert: ${imageHashToUse}`);
+        } else {
+          console.log(`⚠️ No recent image found within 60 seconds to attach to alert.`);
+        }
+
         // Write each alert to blockchain
         for (const alert of alerts) {
           const blockchainResult = await writeToBlockchain(
             farm.walletAddress,
             alert.sensorType,
-            alert.sensorValue
+            alert.sensorValue,
+            imageHashToUse
           );
           blockchainResults.push({
             ...alert,

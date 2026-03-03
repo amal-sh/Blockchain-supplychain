@@ -16,7 +16,7 @@ const char *ssid = "beep beep boop beep";
 const char *password = "potatoslur";
 
 // NOTE: It is highly recommended to use a separate endpoint for binary image uploads!
-const char *serverImageURL = "http://10.204.146.11:3000/api/upload-image"; 
+const char *serverImageURL = "http://10.104.18.11:3000/api/upload-image"; 
 
 const int triggerPin = 14;
 
@@ -130,6 +130,25 @@ void loop() {
         Serial.printf("Server Response Code: %d\n", httpResponseCode);
         String response = http.getString();
         Serial.println(response);
+        Serial.println("\n--- Image Successfully Uploaded ---");
+
+        // Extract imageUrl from JSON response
+        int urlStart = response.indexOf("\"imageUrl\":\"");
+        if (urlStart != -1) {
+          urlStart += 12; // length of "\"imageUrl\":\""
+          int urlEnd = response.indexOf("\"", urlStart);
+          if (urlEnd != -1) {
+            String imageUrl = response.substring(urlStart, urlEnd);
+            Serial.print("View your image here: ");
+            Serial.println(imageUrl);
+          } else {
+            Serial.println("View your image here: http://10.104.18.11:3000/uploads/" + imageHash + ".jpg");
+          }
+        } else {
+          Serial.println("View your image here: http://10.104.18.11:3000/uploads/" + imageHash + ".jpg");
+        }
+
+        Serial.println("-----------------------------------\n");
       } else {
         Serial.printf("Error sending POST: %s\n", http.errorToString(httpResponseCode).c_str());
       }

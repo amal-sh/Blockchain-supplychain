@@ -24,10 +24,10 @@ export default function AdminPage() {
 
   const fetchFarms = async () => {
     try {
-      const res = await fetch('/api/register-admin', { cache: 'no-store' }); 
+      const res = await fetch('/api/register-admin', { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
-        setRegistrations(data.farms || []); 
+        setRegistrations(data.farms || []);
       } else {
         console.error("Failed to fetch farms");
       }
@@ -45,9 +45,9 @@ export default function AdminPage() {
       alert("Error: Missing required farm details (wallet, name, phone, or coordinates) for blockchain registration.");
       return;
     }
-    
+
     setIsApproving(farm._id); // Start loading spinner for this specific farm
-    
+
     try {
       // Step 1: Trigger blockchain transaction from Admin's wallet
       const provider = new ethers.BrowserProvider(window.ethereum);
@@ -55,14 +55,20 @@ export default function AdminPage() {
       const supplyChainContract = new ethers.Contract(contractAddress, supplyChainAbi, signer);
 
       alert("Please confirm the transaction in your wallet to approve and register the farm on the blockchain.");
-      
+
+      const farmName = farm.farmerDetails?.name || farm.farmName || "Unknown Farm";
+      const farmPhone = farm.farmerDetails?.Phone || "Unknown Phone";
+      const farmCoords = typeof farm.coordinates === 'object'
+        ? JSON.stringify(farm.coordinates)
+        : String(farm.coordinates || "");
+
       const tx = await supplyChainContract.addFarmAndProfile(
         farm.walletAddress,
-        farm.farmerDetails.name,
-        farm.farmerDetails.Phone,
-        farm.coordinates
+        String(farmName),
+        String(farmPhone),
+        String(farmCoords)
       );
-      
+
       await tx.wait();
       alert("Blockchain transaction successful! Farm has been registered.");
 
@@ -158,7 +164,7 @@ export default function AdminPage() {
       <header className="w-full py-4 px-6 bg-white shadow-sm sticky top-0 z-40">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
-            <div className="bg-green-600 rounded-full p-1"><Leaf className="w-6 h-6 text-white"/></div>
+            <div className="bg-green-600 rounded-full p-1"><Leaf className="w-6 h-6 text-white" /></div>
             <span className="font-bold text-lg">Innovest AgriChain</span>
           </Link>
           <div className="flex items-center gap-4">
@@ -169,10 +175,10 @@ export default function AdminPage() {
       </header>
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            <div className="bg-white rounded-xl shadow-sm p-6"><div className="flex items-center justify-between"><div><p className="text-sm font-medium text-gray-600">Total Registrations</p><p className="text-3xl font-bold text-gray-900 mt-2">{registrations.length}</p></div><div className="p-3 bg-blue-100 rounded-lg"><Building className="h-6 w-6 text-blue-600" /></div></div></div>
-            <div className="bg-white rounded-xl shadow-sm p-6"><div className="flex items-center justify-between"><div><p className="text-sm font-medium text-gray-600">Pending Review</p><p className="text-3xl font-bold text-yellow-600 mt-2">{getStatusCount("pending")}</p></div><div className="p-3 bg-yellow-100 rounded-lg"><Clock className="h-6 w-6 text-yellow-600" /></div></div></div>
-            <div className="bg-white rounded-xl shadow-sm p-6"><div className="flex items-center justify-between"><div><p className="text-sm font-medium text-gray-600">Approved</p><p className="text-3xl font-bold text-green-600 mt-2">{getStatusCount("approved")}</p></div><div className="p-3 bg-green-100 rounded-lg"><CheckCircle className="h-6 w-6 text-green-600" /></div></div></div>
-            <div className="bg-white rounded-xl shadow-sm p-6"><div className="flex items-center justify-between"><div><p className="text-sm font-medium text-gray-600">Declined</p><p className="text-3xl font-bold text-red-600 mt-2">{getStatusCount("declined")}</p></div><div className="p-3 bg-red-100 rounded-lg"><XCircle className="h-6 w-6 text-red-600" /></div></div></div>
+          <div className="bg-white rounded-xl shadow-sm p-6"><div className="flex items-center justify-between"><div><p className="text-sm font-medium text-gray-600">Total Registrations</p><p className="text-3xl font-bold text-gray-900 mt-2">{registrations.length}</p></div><div className="p-3 bg-blue-100 rounded-lg"><Building className="h-6 w-6 text-blue-600" /></div></div></div>
+          <div className="bg-white rounded-xl shadow-sm p-6"><div className="flex items-center justify-between"><div><p className="text-sm font-medium text-gray-600">Pending Review</p><p className="text-3xl font-bold text-yellow-600 mt-2">{getStatusCount("pending")}</p></div><div className="p-3 bg-yellow-100 rounded-lg"><Clock className="h-6 w-6 text-yellow-600" /></div></div></div>
+          <div className="bg-white rounded-xl shadow-sm p-6"><div className="flex items-center justify-between"><div><p className="text-sm font-medium text-gray-600">Approved</p><p className="text-3xl font-bold text-green-600 mt-2">{getStatusCount("approved")}</p></div><div className="p-3 bg-green-100 rounded-lg"><CheckCircle className="h-6 w-6 text-green-600" /></div></div></div>
+          <div className="bg-white rounded-xl shadow-sm p-6"><div className="flex items-center justify-between"><div><p className="text-sm font-medium text-gray-600">Declined</p><p className="text-3xl font-bold text-red-600 mt-2">{getStatusCount("declined")}</p></div><div className="p-3 bg-red-100 rounded-lg"><XCircle className="h-6 w-6 text-red-600" /></div></div></div>
         </div>
         <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
           <div className="flex flex-col sm:flex-row gap-4">
@@ -195,7 +201,7 @@ export default function AdminPage() {
                       {reg.approval === "pending" && (
                         <>
                           <button onClick={() => handleApprove(reg)} disabled={isApproving === reg._id} className="inline-flex items-center px-3 py-1.5 border border-transparent rounded-md text-xs font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-green-300">
-                            {isApproving === reg._id ? <Loader2 className="w-4 h-4 mr-1 animate-spin"/> : <CheckCheck className="w-4 h-4 mr-1"/>}Approve
+                            {isApproving === reg._id ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <CheckCheck className="w-4 h-4 mr-1" />}Approve
                           </button>
                           <button onClick={() => { setSelectedForDecline(reg); setIsDeclineDialogOpen(true); }} className="inline-flex items-center px-3 py-1.5 border border-transparent rounded-md text-xs font-medium text-white bg-red-600 hover:bg-red-700"><X className="w-4 h-4 mr-1" />Decline</button>
                         </>
@@ -210,60 +216,60 @@ export default function AdminPage() {
       </main>
 
       {isDetailModalOpen && selectedRegistration && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-                <div className="p-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="space-y-3">
-                            <h3 className="text-lg font-semibold text-gray-900">Owner Information</h3>
-                            <p><strong>Name:</strong> {selectedRegistration.farmerDetails?.name}</p>
-                            <p><strong>Email:</strong> {selectedRegistration.farmerDetails?.email}</p>
-                            <p><strong>Phone:</strong> {selectedRegistration.farmerDetails?.Phone}</p>
-                            <p className="break-all"><strong>Wallet:</strong> {selectedRegistration.walletAddress}</p>
-                        </div>
-                        <div className="space-y-3">
-                             <h3 className="text-lg font-semibold text-gray-900">Farm Information</h3>
-                            <p><strong>Farm Name:</strong> {selectedRegistration.farmName}</p>
-                            <p><strong>Location:</strong> {selectedRegistration.address}, {selectedRegistration.region}, {selectedRegistration.country}</p>
-                            <p><strong>Coordinates:</strong> {selectedRegistration.coordinates}</p>
-                            <p><strong>Registered:</strong> {new Date(selectedRegistration.createdAt).toLocaleString()}</p>
-                        </div>
-                        <div className="md:col-span-2">
-                             <h3 className="text-lg font-semibold text-gray-900">Documents</h3>
-                            {selectedRegistration.certificateFiles?.length > 0 ? selectedRegistration.certificateFiles.map((doc, index) => (
-                                <a key={index} href={doc} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">{doc.split('/').pop()}</a>
-                            )) : <p>No documents.</p>}
-                        </div>
-                    </div>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-3">
+                  <h3 className="text-lg font-semibold text-gray-900">Owner Information</h3>
+                  <p><strong>Name:</strong> {selectedRegistration.farmerDetails?.name}</p>
+                  <p><strong>Email:</strong> {selectedRegistration.farmerDetails?.email}</p>
+                  <p><strong>Phone:</strong> {selectedRegistration.farmerDetails?.Phone}</p>
+                  <p className="break-all"><strong>Wallet:</strong> {selectedRegistration.walletAddress}</p>
                 </div>
-                <div className="flex justify-end gap-3 p-6 border-t">
-                    {selectedRegistration.approval === "pending" && (
-                        <>
-                            <button onClick={() => handleApprove(selectedRegistration)} disabled={isApproving === selectedRegistration._id} className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-green-300">
-                                {isApproving === selectedRegistration._id ? <Loader2 className="w-4 h-4 mr-2 animate-spin"/> : <CheckCheck className="w-4 h-4 mr-2"/>}
-                                Approve Farm
-                            </button>
-                            <button onClick={() => { setSelectedForDecline(selectedRegistration); setIsDeclineDialogOpen(true); setIsDetailModalOpen(false); }} className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-red-600 hover:bg-red-700">Decline</button>
-                        </>
-                    )}
-                    <button onClick={() => setIsDetailModalOpen(false)} className="px-4 py-2 border rounded-lg text-sm font-medium bg-white hover:bg-gray-50">Close</button>
+                <div className="space-y-3">
+                  <h3 className="text-lg font-semibold text-gray-900">Farm Information</h3>
+                  <p><strong>Farm Name:</strong> {selectedRegistration.farmName}</p>
+                  <p><strong>Location:</strong> {selectedRegistration.address}, {selectedRegistration.region}, {selectedRegistration.country}</p>
+                  <p><strong>Coordinates:</strong> {selectedRegistration.coordinates}</p>
+                  <p><strong>Registered:</strong> {new Date(selectedRegistration.createdAt).toLocaleString()}</p>
                 </div>
+                <div className="md:col-span-2">
+                  <h3 className="text-lg font-semibold text-gray-900">Documents</h3>
+                  {selectedRegistration.certificateFiles?.length > 0 ? selectedRegistration.certificateFiles.map((doc, index) => (
+                    <a key={index} href={doc} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">{doc.split('/').pop()}</a>
+                  )) : <p>No documents.</p>}
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 p-6 border-t">
+              {selectedRegistration.approval === "pending" && (
+                <>
+                  <button onClick={() => handleApprove(selectedRegistration)} disabled={isApproving === selectedRegistration._id} className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-green-300">
+                    {isApproving === selectedRegistration._id ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CheckCheck className="w-4 h-4 mr-2" />}
+                    Approve Farm
+                  </button>
+                  <button onClick={() => { setSelectedForDecline(selectedRegistration); setIsDeclineDialogOpen(true); setIsDetailModalOpen(false); }} className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-red-600 hover:bg-red-700">Decline</button>
+                </>
+              )}
+              <button onClick={() => setIsDetailModalOpen(false)} className="px-4 py-2 border rounded-lg text-sm font-medium bg-white hover:bg-gray-50">Close</button>
             </div>
           </div>
+        </div>
       )}
-      
+
       {isDeclineDialogOpen && selectedForDecline && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
-                <div className="p-6">
-                    <h3 className="text-lg font-semibold">Decline Registration</h3>
-                    <textarea rows={4} placeholder="Reason for decline..." value={declineReason} onChange={(e) => setDeclineReason(e.target.value)} className="w-full mt-4 p-2 border rounded-lg"/>
-                </div>
-                <div className="px-6 py-4 border-t flex justify-end gap-3">
-                    <button onClick={() => setIsDeclineDialogOpen(false)} className="px-4 py-2 rounded-lg text-sm font-medium bg-white hover:bg-gray-50 border">Cancel</button>
-                    <button onClick={() => handleDecline(selectedForDecline._id, declineReason)} disabled={!declineReason.trim()} className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:opacity-50">Confirm Decline</button>
-                </div>
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
+            <div className="p-6">
+              <h3 className="text-lg font-semibold">Decline Registration</h3>
+              <textarea rows={4} placeholder="Reason for decline..." value={declineReason} onChange={(e) => setDeclineReason(e.target.value)} className="w-full mt-4 p-2 border rounded-lg" />
             </div>
+            <div className="px-6 py-4 border-t flex justify-end gap-3">
+              <button onClick={() => setIsDeclineDialogOpen(false)} className="px-4 py-2 rounded-lg text-sm font-medium bg-white hover:bg-gray-50 border">Cancel</button>
+              <button onClick={() => handleDecline(selectedForDecline._id, declineReason)} disabled={!declineReason.trim()} className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:opacity-50">Confirm Decline</button>
+            </div>
+          </div>
         </div>
       )}
     </div>

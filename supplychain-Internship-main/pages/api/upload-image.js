@@ -66,6 +66,7 @@ export default async function handler(req, res) {
         });
 
         console.log(`[Upload-Image] Received. Size: ${buffer.length}b, Saved to ${filePath}`);
+        console.log(`[Upload-Image] View image at: http://${req.headers.host}/uploads/${fileName}`);
 
         return res.status(200).json({
             message: 'Image uploaded and hash stored successfully',

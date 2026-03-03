@@ -17,6 +17,7 @@ interface IFarm {
     // This new function is now implemented in your main contract
     function fileInsuranceClaim(
         string memory _sensorType,
-        string memory _sensorValue
+        string memory _sensorValue,
+        string memory _imageHash
     ) external;
 }
