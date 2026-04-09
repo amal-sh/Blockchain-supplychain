@@ -12,6 +12,7 @@ export default function InsuranceClaim() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState({ text: "", isError: false });
   const [showForm, setShowForm] = useState(false);
+  const [selectedEvidence, setSelectedEvidence] = useState([]);
 
   // IoT sensor data state
   const [sensorData, setSensorData] = useState([]);
@@ -348,7 +349,8 @@ export default function InsuranceClaim() {
         },
         body: JSON.stringify({
           ...formData,
-          sensorValidation: validation // Include sensor validation in the submission
+          sensorValidation: validation, // Include sensor validation in the submission
+          evidence: selectedEvidence.length > 0 ? selectedEvidence : null // Include evidence array
         })
       });
 
@@ -374,6 +376,7 @@ export default function InsuranceClaim() {
           additionalInfo: ''
         });
         setSensorValidation({ isValid: false, reason: "" });
+        setSelectedEvidence([]);
 
         // Refresh claims list
         setTimeout(() => {
@@ -833,6 +836,46 @@ export default function InsuranceClaim() {
                   />
                 </div>
 
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', color: '#374151', marginBottom: '0.5rem' }}>
+                    Attach Evidence (Optional)
+                  </label>
+                  {evidenceAlerts.length === 0 ? (
+                    <p style={{ fontSize: '0.875rem', color: '#6b7280' }}>No anomaly evidence available to attach.</p>
+                  ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1rem' }}>
+                      {evidenceAlerts.map((evidence, idx) => {
+                        const isSelected = selectedEvidence.some(e => e.hashId === evidence.hashId);
+                        return (
+                          <div
+                            key={idx}
+                            onClick={() => {
+                              setSelectedEvidence(prev =>
+                                isSelected
+                                  ? prev.filter(e => e.hashId !== evidence.hashId)
+                                  : [...prev, evidence]
+                              );
+                            }}
+                            style={{
+                              border: `2px solid ${isSelected ? '#2563eb' : '#e5e7eb'}`,
+                              borderRadius: '0.5rem',
+                              padding: '0.5rem',
+                              cursor: 'pointer',
+                              backgroundColor: isSelected ? '#eff6ff' : 'white'
+                            }}
+                          >
+                            <img src={evidence.imagePath} alt="Evidence" style={{ width: '100%', height: '100px', objectFit: 'cover', borderRadius: '0.25rem', marginBottom: '0.5rem' }} />
+                            <div style={{ fontSize: '0.75rem', color: '#374151' }}>
+                              Date: {formatDate(evidence.timestamp)}<br />
+                              Alerts: {evidence.alerts.length}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
                 <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                   <button
                     type="submit"
@@ -919,7 +962,24 @@ export default function InsuranceClaim() {
                       </div>
                     </div>
 
-                    <div style={{ paddingTop: '0.75rem', borderTop: '1px solid #e5e7eb', fontSize: '0.875rem' }}>
+                    {claim.evidence && (
+                      <div style={{ marginTop: '1rem', padding: '1rem', backgroundColor: '#f9fafb', borderRadius: '0.5rem' }}>
+                        <span style={{ fontWeight: '600', fontSize: '0.875rem', marginBottom: '0.5rem', display: 'block' }}>Attached Evidence</span>
+                        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                          {(Array.isArray(claim.evidence) ? claim.evidence : [claim.evidence]).map((ev, i) => (
+                            <div key={i} style={{ display: 'flex', gap: '1rem', alignItems: 'center', backgroundColor: 'white', padding: '0.5rem', borderRadius: '0.375rem', border: '1px solid #e5e7eb' }}>
+                              <img src={ev.imagePath} alt="Evidence" style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '0.25rem' }} />
+                              <div style={{ fontSize: '0.75rem', color: '#374151' }}>
+                                <p style={{ margin: '0 0 0.25rem 0', color: '#6b7280' }}>Time: {formatDate(ev.timestamp)}</p>
+                                <p style={{ margin: '0', color: '#dc2626' }}>Alerts: {ev.alerts?.join(', ')}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div style={{ paddingTop: '0.75rem', borderTop: '1px solid #e5e7eb', fontSize: '0.875rem', marginTop: '1rem' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', color: '#9ca3af' }}>
                         <span>Damage Date: {formatDate(claim.damageDate)}</span>
                         <span>Submitted: {formatDate(claim.submittedAt)}</span>

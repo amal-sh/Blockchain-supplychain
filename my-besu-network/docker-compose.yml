@@ -4,7 +4,7 @@ services:
     command:
       - --network=dev
       - --miner-enabled
-      - --miner-coinbase=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+      - --miner-coinbase=0xAA4D3Fa6b7f78D34b4014FBFdA90EAF13D18bc17
       - --rpc-http-enabled
       - --rpc-http-api=ETH,NET,WEB3,TRACE,TXPOOL
       - --rpc-http-cors-origins=*

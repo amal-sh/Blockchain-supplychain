@@ -62,6 +62,7 @@ export default async function handler(req, res) {
         damageDate: new Date(damageDate),
         contactPhone,
         additionalInfo,
+        evidence: req.body.evidence || null, // Capture evidence object if present
         status: 'pending', // pending, under_review, approved, rejected
         claimNumber: `INS-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
         submittedAt: new Date(),
@@ -69,8 +70,8 @@ export default async function handler(req, res) {
       };
 
       const result = await db.collection('insurance_claims').insertOne(newClaim);
-      
-      return res.status(201).json({ 
+
+      return res.status(201).json({
         message: 'Insurance claim submitted successfully',
         claimId: result.insertedId,
         claimNumber: newClaim.claimNumber

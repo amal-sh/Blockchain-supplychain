@@ -9,11 +9,12 @@ import { contractAddress, supplyChainAbi } from '../../lib/contract-config';
 // Threshold Configuration
 const THRESHOLDS = {
   temperature: {
+    low: 15,
     alert: 36,
     severe: 38
   },
   humidity: {
-    low: 40,
+    low: 30,
     fungalRisk: 92
   },
   soil: {
@@ -21,6 +22,7 @@ const THRESHOLDS = {
     paddyDry: 45
   },
   rain: {
+    drought: 5,
     cropRisk: 50,
     flood: 150
   }
@@ -41,6 +43,12 @@ function checkThresholds(temperature, humidity, soil, rain) {
     alerts.push({
       sensorType: 'Temperature',
       sensorValue: `${temperature}°C (ALERT)`,
+      severity: 'alert'
+    });
+  } else if (temperature < THRESHOLDS.temperature.low) {
+    alerts.push({
+      sensorType: 'Temperature',
+      sensorValue: `${temperature}°C (LOW - Frost/Cold risk)`,
       severity: 'alert'
     });
   }
@@ -80,6 +88,12 @@ function checkThresholds(temperature, humidity, soil, rain) {
     alerts.push({
       sensorType: 'Rain',
       sensorValue: `${rain}mm (Crop risk - excessive rain)`,
+      severity: 'alert'
+    });
+  } else if (rain < THRESHOLDS.rain.drought) {
+    alerts.push({
+      sensorType: 'Rain',
+      sensorValue: `${rain}mm (LOW - Drought risk)`,
       severity: 'alert'
     });
   }
@@ -166,13 +180,13 @@ export default async function handler(req, res) {
 
       // 3. Handle Alerts & Blockchain Interaction
       if (alerts.length > 0) {
-        console.log(`⚠️ ${alerts.length} threshold breach(es) detected!`);
+        console.log(`${alerts.length} threshold breach(es) detected!`);
 
         // Get farm wallet address from database
         let farm = await db.collection('farms').findOne({ _id: new ObjectId(farmId) });
 
         if (!farm || !farm.walletAddress) {
-          console.error('❌ Farm wallet address not found in database');
+          console.error('Farm wallet address not found in database');
           return res.status(200).json({
             message: 'Data received successfully',
             id: result.insertedId,
@@ -259,7 +273,7 @@ export default async function handler(req, res) {
         .collection('sensorData')
         .find({ farmId: new ObjectId(farmId) })
         .sort({ timestamp: -1 })
-        .limit(100)
+        .limit(3000)
         .toArray();
 
       if (data.length === 0) {
@@ -267,7 +281,7 @@ export default async function handler(req, res) {
           .collection('sensorData')
           .find({ farmId: farmId })
           .sort({ timestamp: -1 })
-          .limit(100)
+          .limit(3000)
           .toArray();
       }
 

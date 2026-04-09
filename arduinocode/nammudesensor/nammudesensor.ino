@@ -5,14 +5,15 @@
 #include <DHT_U.h>
 
 // --- Configuration ---
-#define MOISTURE_PIN 34
+#define MOISTURE_PIN 32
+#define RAIN_PIN 34 // Modify this to the correct pin for your rainfall sensor
 #define DHTPIN 14 
 #define LED_PIN 13
 #define DHTTYPE DHT11
 
 const char* ssid = "beep beep boop beep";          // Add your WiFi Name
-const char* password = "potatoslur";  // Add your WiFi Password
-const char* serverURL = "http://10.104.18.11:3000/api/sensor-data";
+const char* password = "mmmmmmmm";  // Add your WiFi Password
+const char* serverURL = "http://10.13.81.11:3000/api/sensor-data";
 const char* farmId = "68b72a6325dd051caf5d15b4";
 
 const int dryValue = 3000;
@@ -24,7 +25,8 @@ uint32_t delayMS;
 void setup() {
   pinMode(LED_PIN, OUTPUT);
   pinMode(MOISTURE_PIN, INPUT);
-  Serial.begin(9600);
+  pinMode(RAIN_PIN, INPUT);
+  Serial.begin(115200);
   
   // Connect to WiFi
   WiFi.begin(ssid, password);
@@ -54,7 +56,7 @@ void loop() {
   if (!isnan(event.temperature)) {
     currentTemp = event.temperature;
     Serial.print(F("Temp: ")); Serial.print(currentTemp); Serial.println(F("°C"));
-    if (currentTemp > 20.00) thresholdTriggered = true;
+    if (currentTemp > 36.00 || currentTemp < 15.00) thresholdTriggered = true;
   }
 
   // --- Humidity Logic ---
@@ -62,6 +64,7 @@ void loop() {
   if (!isnan(event.relative_humidity)) {
     currentHum = event.relative_humidity;
     Serial.print(F("Hum: ")); Serial.print(currentHum); Serial.println(F("%"));
+    if (currentHum > 92.00 || currentHum < 30.00) thresholdTriggered = true;
   }
 
   // --- Soil Moisture Logic ---
@@ -70,14 +73,21 @@ void loop() {
   soilPercent = constrain(soilPercent, 0, 100);
   Serial.print(F("Moisture: ")); Serial.print(soilPercent); Serial.println(F("%"));
   
-  if (soilPercent < 30) thresholdTriggered = true;
+  if (soilPercent < 18) thresholdTriggered = true;
+
+  // --- Rainfall Logic ---
+  int rawRain = analogRead(RAIN_PIN);
+  int rainPercent = map(rawRain, dryValue, wetValue, 0, 100);
+  rainPercent = constrain(rainPercent, 0, 100);
+  Serial.print(F("Rain: ")); Serial.print(rainPercent); Serial.println(F("%"));
+  
+  if (rainPercent > 50 || rainPercent < 5) thresholdTriggered = true;
 
   // --- Output Control ---
   digitalWrite(LED_PIN, thresholdTriggered ? HIGH : LOW);
 
   // --- Send Data ---
-  // Rain is set to 0.0 as a placeholder since no sensor is defined yet
-  sendToServer(currentTemp, currentHum, soilPercent, 0.0);
+  sendToServer(currentTemp, currentHum, soilPercent, (float)rainPercent);
   
   Serial.println(F("-----------------------"));
 }

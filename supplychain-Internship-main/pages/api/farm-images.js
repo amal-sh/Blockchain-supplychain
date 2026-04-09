@@ -13,7 +13,7 @@ export default async function handler(req, res) {
         const images = await db.collection('image_hashes')
             .find({})
             .sort({ timestamp: -1 })
-            .limit(50)
+            .limit(200)
             .toArray();
 
         return res.status(200).json(images);
