@@ -1,5 +1,6 @@
-const hre = require("hardhat");
-require("dotenv").config();
+import hre from "hardhat";
+import dotenv from "dotenv";
+dotenv.config();
 
 /**
  * This script sets up the sensor service account after contract deployment.
@@ -12,7 +13,7 @@ require("dotenv").config();
 async function main() {
   // Get the deployed contract address
   const contractAddress = process.env.CONTRACT_ADDRESS;
-  
+
   if (!contractAddress) {
     console.error("❌ CONTRACT_ADDRESS not found in .env file");
     console.log("Please add: CONTRACT_ADDRESS=0x...");
@@ -21,7 +22,7 @@ async function main() {
 
   // Get the service account address from env
   const serviceAccountPrivateKey = process.env.SENSOR_SERVICE_PRIVATE_KEY;
-  
+
   if (!serviceAccountPrivateKey) {
     console.error("❌ SENSOR_SERVICE_PRIVATE_KEY not found in .env file");
     console.log("Please generate a new wallet and add its private key to .env");
@@ -44,10 +45,10 @@ async function main() {
   // Check if caller is the owner
   const owner = await contract.owner();
   const [signer] = await hre.ethers.getSigners();
-  
+
   console.log("Contract Owner:", owner);
   console.log("Current Signer:", signer.address);
-  
+
   if (signer.address.toLowerCase() !== owner.toLowerCase()) {
     console.error("\n❌ You are not the contract owner!");
     console.log("Only the contract owner can set the service account.");
@@ -58,19 +59,19 @@ async function main() {
   // Set the service account
   console.log("\n📝 Setting service account...");
   const tx = await contract.setSensorServiceAccount(serviceAccountAddress);
-  
+
   console.log("Transaction submitted. Waiting for confirmation...");
   console.log("TX Hash:", tx.hash);
-  
+
   const receipt = await tx.wait();
-  
+
   console.log("\n✅ Service account successfully registered!");
   console.log("Block Number:", receipt.blockNumber);
   console.log("Gas Used:", receipt.gasUsed.toString());
 
   // Verify the service account was set correctly
   const registeredServiceAccount = await contract.sensorServiceAccount();
-  
+
   console.log("\n=== Verification ===");
   console.log("Registered Service Account:", registeredServiceAccount);
   console.log("Expected:", serviceAccountAddress);

@@ -1,7 +1,6 @@
 #include "esp_camera.h"
 #include <WiFi.h>
 #include <HTTPClient.h>
-#include "mbedtls/md.h" // Built-in ESP32 library for hashing
 
 // ================================================================
 // CAMERA MODEL
@@ -10,30 +9,28 @@
 #include "camera_pins.h"
 
 // ===========================
-// WiFi & Server Credentials
+// WiFi & Cloudinary
 // ===========================
-const char *ssid = "beep beep boop beep";
-const char *password = "potatoslur";
+const char* ssid = "beep beep boop beep";
+const char* password = "mmmmmmmm";
 
-// NOTE: It is highly recommended to use a separate endpoint for binary image uploads!
-const char *serverImageURL = "http://10.104.18.11:3000/api/upload-image"; 
+const char* uploadPreset = "innovest";
+const char* cloudinaryURL = "http://api.cloudinary.com/v1_1/dif04rozm/image/upload";
 
+// ===========================
+// Trigger Pin
+// ===========================
 const int triggerPin = 14;
 
-void startCameraServer();
-
-// Function prototype for hashing
-String calculateSHA256(uint8_t *payload, size_t length);
-
-void setup() {
-  pinMode(triggerPin, INPUT);
-  Serial.begin(115200);
-  Serial.setDebugOutput(true);
-  Serial.println();
-
+// ================================================================
+// Camera Setup
+// ================================================================
+void setupCamera() {
   camera_config_t config;
+
   config.ledc_channel = LEDC_CHANNEL_0;
-  config.ledc_timer = LEDC_TIMER_0;
+  config.ledc_timer   = LEDC_TIMER_0;
+
   config.pin_d0 = Y2_GPIO_NUM;
   config.pin_d1 = Y3_GPIO_NUM;
   config.pin_d2 = Y4_GPIO_NUM;
@@ -42,39 +39,44 @@ void setup() {
   config.pin_d5 = Y7_GPIO_NUM;
   config.pin_d6 = Y8_GPIO_NUM;
   config.pin_d7 = Y9_GPIO_NUM;
-  config.pin_xclk = XCLK_GPIO_NUM;
-  config.pin_pclk = PCLK_GPIO_NUM;
-  config.pin_vsync = VSYNC_GPIO_NUM;
-  config.pin_href = HREF_GPIO_NUM;
+
+  config.pin_xclk     = XCLK_GPIO_NUM;
+  config.pin_pclk     = PCLK_GPIO_NUM;
+  config.pin_vsync    = VSYNC_GPIO_NUM;
+  config.pin_href     = HREF_GPIO_NUM;
   config.pin_sccb_sda = SIOD_GPIO_NUM;
   config.pin_sccb_scl = SIOC_GPIO_NUM;
-  config.pin_pwdn = PWDN_GPIO_NUM;
-  config.pin_reset = RESET_GPIO_NUM;
+  config.pin_pwdn     = PWDN_GPIO_NUM;
+  config.pin_reset    = RESET_GPIO_NUM;
+
   config.xclk_freq_hz = 20000000;
-  config.frame_size = FRAMESIZE_UXGA;
-  config.pixel_format = PIXFORMAT_JPEG; 
-  config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
-  config.fb_location = CAMERA_FB_IN_PSRAM;
+  config.pixel_format = PIXFORMAT_JPEG;
+
+  // 🔧 Stable settings
+  config.frame_size   = FRAMESIZE_QVGA;
   config.jpeg_quality = 12;
-  config.fb_count = 1;
+  config.fb_count     = 1;
+  config.fb_location  = CAMERA_FB_IN_PSRAM;
+  config.grab_mode    = CAMERA_GRAB_LATEST;
 
-  if (psramFound()) {
-    config.jpeg_quality = 10;
-    config.fb_count = 2;
-    config.grab_mode = CAMERA_GRAB_LATEST;
-  } else {
-    config.frame_size = FRAMESIZE_SVGA;
-    config.fb_location = CAMERA_FB_IN_DRAM;
+  if (esp_camera_init(&config) != ESP_OK) {
+    Serial.println("❌ Camera init failed!");
+    while (true);
   }
 
-  esp_err_t err = esp_camera_init(&config);
-  if (err != ESP_OK) {
-    Serial.printf("Camera init failed with error 0x%x", err);
-    return;
-  }
+  Serial.println("✅ Camera initialized");
+}
 
-  sensor_t * s = esp_camera_sensor_get();
-  s->set_framesize(s, FRAMESIZE_QVGA); // Kept lower resolution for stable WiFi transmission
+// ================================================================
+// Setup
+// ================================================================
+void setup() {
+  Serial.begin(115200);
+  Serial.setDebugOutput(true);
+
+  pinMode(triggerPin, INPUT_PULLDOWN);
+
+  setupCamera();
 
   WiFi.begin(ssid, password);
   WiFi.setSleep(false);
@@ -84,109 +86,145 @@ void setup() {
     delay(500);
     Serial.print(".");
   }
-  Serial.println("\nWiFi connected");
 
-  startCameraServer();
+  Serial.println("\n✅ WiFi connected");
 
   Serial.println("------------------------------------");
-  Serial.println("Camera Ready!");
-  Serial.println("Pull Pin 14 HIGH to capture, hash, and upload.");
+  Serial.println("Camera Ready! Raise Pin 14 HIGH to capture");
   Serial.println("------------------------------------");
 }
 
+// ================================================================
+// Loop
+// ================================================================
 void loop() {
-  if (digitalRead(triggerPin) == HIGH) {
-    Serial.println("\n[TRIGGER] Capturing image...");
+  static bool triggered = false;
 
-    // 1. Capture the image
-    camera_fb_t * fb = esp_camera_fb_get();
-    if (!fb) {
-      Serial.println("Camera capture failed!");
-      delay(2000);
-      return;
-    }
+  bool state = digitalRead(triggerPin);
+  Serial.printf("Pin 14: %d\n", state);
 
-    // 2. Hash the image data
-    Serial.println("Calculating SHA-256 Hash...");
-    String imageHash = calculateSHA256(fb->buf, fb->len);
-    Serial.print("Hash: ");
-    Serial.println(imageHash);
+  if (state == HIGH && !triggered) {
+    triggered = true;
 
-    // 3. Send to Server
-    if (WiFi.status() == WL_CONNECTED) {
-      Serial.println("Uploading to server...");
-      HTTPClient http;
-      http.begin(serverImageURL);
-      
-      // Tell the server we are sending a raw JPEG image
-      http.addHeader("Content-Type", "image/jpeg");
-      // Pass the hash securely in the HTTP Headers
-      http.addHeader("X-Image-Hash", imageHash); 
-
-      // Send the actual image buffer
-      int httpResponseCode = http.POST(fb->buf, fb->len);
-
-      if (httpResponseCode > 0) {
-        Serial.printf("Server Response Code: %d\n", httpResponseCode);
-        String response = http.getString();
-        Serial.println(response);
-        Serial.println("\n--- Image Successfully Uploaded ---");
-
-        // Extract imageUrl from JSON response
-        int urlStart = response.indexOf("\"imageUrl\":\"");
-        if (urlStart != -1) {
-          urlStart += 12; // length of "\"imageUrl\":\""
-          int urlEnd = response.indexOf("\"", urlStart);
-          if (urlEnd != -1) {
-            String imageUrl = response.substring(urlStart, urlEnd);
-            Serial.print("View your image here: ");
-            Serial.println(imageUrl);
-          } else {
-            Serial.println("View your image here: http://10.104.18.11:3000/uploads/" + imageHash + ".jpg");
-          }
-        } else {
-          Serial.println("View your image here: http://10.104.18.11:3000/uploads/" + imageHash + ".jpg");
-        }
-
-        Serial.println("-----------------------------------\n");
-      } else {
-        Serial.printf("Error sending POST: %s\n", http.errorToString(httpResponseCode).c_str());
-      }
-      http.end();
-    } else {
-      Serial.println("WiFi Disconnected. Cannot upload.");
-    }
-
-    // 4. Free the camera memory (CRITICAL step to prevent crashes)
-    esp_camera_fb_return(fb);
-
-    // Cooldown to prevent spamming the server
-    delay(5000); 
+    Serial.println("\n📸 Trigger detected!");
+    captureAndUpload();
   }
-  
-  delay(10);
+
+  if (state == LOW) {
+    triggered = false;
+  }
+
+  delay(100);
 }
 
 // ================================================================
-// SHA-256 Hashing Function
+// Capture and Upload (STREAM VERSION)
 // ================================================================
-String calculateSHA256(uint8_t *payload, size_t length) {
-  byte shaResult[32];
-  mbedtls_md_context_t ctx;
-  mbedtls_md_type_t md_type = MBEDTLS_MD_SHA256;
-  
-  mbedtls_md_init(&ctx);
-  mbedtls_md_setup(&ctx, mbedtls_md_info_from_type(md_type), 0);
-  mbedtls_md_starts(&ctx);
-  mbedtls_md_update(&ctx, payload, length);
-  mbedtls_md_finish(&ctx, shaResult);
-  mbedtls_md_free(&ctx);
+void captureAndUpload() {
+  Serial.println("STEP 1: Capturing image...");
 
-  String hashStr = "";
-  for(int i = 0; i < sizeof(shaResult); i++) {
-    char str[3];
-    sprintf(str, "%02x", (int)shaResult[i]);
-    hashStr += str;
+  camera_fb_t *fb = esp_camera_fb_get();
+  if (!fb) {
+    Serial.println("❌ Capture failed");
+    return;
   }
-  return hashStr;
+
+  Serial.printf("✅ Image captured (%d bytes)\n", fb->len);
+
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("❌ WiFi not connected");
+    esp_camera_fb_return(fb);
+    return;
+  }
+
+  String boundary = "----ESP32Boundary";
+
+  String head =
+    "--" + boundary + "\r\n"
+    "Content-Disposition: form-data; name=\"file\"; filename=\"image.jpg\"\r\n"
+    "Content-Type: image/jpeg\r\n\r\n";
+
+  String tail =
+    "\r\n--" + boundary + "\r\n"
+    "Content-Disposition: form-data; name=\"upload_preset\"\r\n\r\n" +
+    String(uploadPreset) +
+    "\r\n--" + boundary + "--\r\n";
+
+  size_t totalLength = head.length() + fb->len + tail.length();
+
+  // Allocate in PSRAM
+  uint8_t *body = (uint8_t *)ps_malloc(totalLength);
+  if (!body) {
+    Serial.println("❌ ps_malloc failed");
+    esp_camera_fb_return(fb);
+    return;
+  }
+
+  // Assemble body
+  memcpy(body, head.c_str(), head.length());
+  memcpy(body + head.length(), fb->buf, fb->len);
+  memcpy(body + head.length() + fb->len, tail.c_str(), tail.length());
+
+  esp_camera_fb_return(fb);  // Free camera buffer ASAP
+
+  Serial.println("STEP 2: Starting upload...");
+
+  WiFiClient client;
+  HTTPClient http;
+  http.begin(client, cloudinaryURL);
+  http.addHeader("Content-Type", "multipart/form-data; boundary=" + boundary);
+
+  int code = http.POST(body, totalLength);
+
+  free(body);
+
+  if (code > 0) {
+    Serial.printf("✅ Upload response code: %d\n", code);
+    String response = http.getString();
+    Serial.println(response);
+
+    // Extract etag and secure_url
+    int etagStart = response.indexOf("\"etag\":\"");
+    String etag = "";
+    if (etagStart > -1) {
+      etagStart += 8;
+      int etagEnd = response.indexOf("\"", etagStart);
+      if (etagEnd > -1) etag = response.substring(etagStart, etagEnd);
+    }
+
+    String secureUrl = "";
+    int urlStart = response.indexOf("\"secure_url\":\"");
+    if (urlStart > -1) {
+      urlStart += 14;
+      int urlEnd = response.indexOf("\"", urlStart);
+      if (urlEnd > -1) secureUrl = response.substring(urlStart, urlEnd);
+    }
+
+    http.end(); // Close the first connection
+
+    if (etag != "") {
+      Serial.println("Extracted ETag: " + etag);
+      Serial.println("Sending ETag to backend...");
+      
+      // Send to Backend
+      HTTPClient backendHttp;
+      WiFiClient backendClient; // Use a fresh client for the backend
+      backendHttp.begin(backendClient, "http://10.13.81.11:3000/api/save-etag");
+      backendHttp.addHeader("Content-Type", "application/json");
+      
+      String jsonPayload = "{\"etag\":\"" + etag + "\",\"secure_url\":\"" + secureUrl + "\"}";
+      int bCode = backendHttp.POST(jsonPayload);
+      
+      if (bCode > 0) {
+        Serial.printf("✅ Saved ETag to backend: %d\n", bCode);
+      } else {
+        Serial.printf("❌ Failed to save ETag: %s\n", backendHttp.errorToString(bCode).c_str());
+      }
+      backendHttp.end();
+    }
+  } else {
+    http.end(); // Ensure to close if code was <= 0
+  }
+
+  Serial.println("STEP 3: Done\n");
 }
